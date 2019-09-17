@@ -30,9 +30,9 @@ const COLOR_YELLOW = '\x1b[33m';
 
 const argv = require('minimist')(process.argv.slice(2), {});
 const defaultMinimumRevision = 305043;
+// 305043 breaks macos because 64 bit
+// 493957 breaks puppeteer because Browser.getVersion
 
-//305043 breaks macos
-//493957 breaks puppeteer
 const help = `
 Usage:
   npx bisect-chrome [--good <revision>] [--bad <revision>] [<script>]
