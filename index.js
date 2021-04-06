@@ -21,7 +21,7 @@ const pptr = require('puppeteer-core');
 const browserFetcher = pptr.createBrowserFetcher();
 const path = require('path');
 const fs = require('fs');
-const {fork} = require('child_process');
+const {spawn} = require('child_process');
 
 const COLOR_RESET = '\x1b[0m';
 const COLOR_RED = '\x1b[31m';
@@ -40,10 +40,12 @@ Usage:
 Parameters:
   --good    revision that is known to be GOOD
   --bad     revision that is known to be BAD
-  <script>  path to a Puppeteer script that returns a non-zero code for BAD and 0 for GOOD
+  <script>  path to a script that returns a non-zero code for BAD and 0 for GOOD
 
 Example:
   npx bisect-chrome --good 577361 --bad 599821 simple.js
+
+Note: the script exposes Chromium executable path as \`CRPATH\` environment variabble.
 
 Use https://omahaproxy.appspot.com/ to find revisions.
 `;
@@ -53,21 +55,28 @@ Use https://omahaproxy.appspot.com/ to find revisions.
     console.log(help);
     process.exit(0);
   }
-  const {
-    good = defaultMinimumRevision,
-    bad = await lastRevision()
-  } = argv;
-  if (typeof good !== 'number') {
-    console.log(COLOR_RED + 'ERROR: expected --good argument to be a number' + COLOR_RESET);
-    console.log(help);
-    process.exit(1);
-  }
 
-  if (typeof bad !== 'number') {
-    console.log(COLOR_RED + 'ERROR: expected --bad argument to be a number' + COLOR_RESET);
-    console.log(help);
-    process.exit(1);
-  }
+  const maxRevision = await lastRevision();
+  const getRevisionArgument = (name) => {
+    if (typeof argv[name] !== 'number') {
+      console.log(COLOR_RED + `ERROR: expected --${name} argument to be a number` + COLOR_RESET);
+      console.log(help);
+      process.exit(1);
+    }
+    if (argv[name] <= defaultMinimumRevision) {
+      console.log(COLOR_RED + `ERROR: expected --${name} argument to be larger than ${defaultMinimumRevision} ` + COLOR_RESET);
+      console.log(help);
+      process.exit(1);
+    }
+    if (argv[name] >= maxRevision) {
+      console.log(COLOR_RED + `ERROR: expected --${name} argument to be smaller than ${maxRevision} ` + COLOR_RESET);
+      console.log(help);
+      process.exit(1);
+    }
+    return argv[name];
+  };
+  const good = getRevisionArgument('good');
+  const bad = getRevisionArgument('bad');
 
   const scriptPath = path.resolve(argv._[0] || path.join(__dirname, 'default.js'));
   if (!fs.existsSync(scriptPath)) {
@@ -124,11 +133,11 @@ async function bisect(scriptPath, good, bad) {
 function runScript(scriptPath, revisionInfo) {
   const log = debug('bisect:runscript');
   log('Running script');
-  const child = fork(scriptPath, [], {
+  const child = spawn(scriptPath, [], {
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
     env: {
       ...process.env,
-      PUPPETEER_EXECUTABLE_PATH: revisionInfo.executablePath,
+      CRPATH: revisionInfo.executablePath,
     },
   });
   return new Promise((resolve, reject) => {
