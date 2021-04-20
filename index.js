@@ -22,6 +22,7 @@ const browserFetcher = pptr.createBrowserFetcher();
 const path = require('path');
 const fs = require('fs');
 const {spawn, fork} = require('child_process');
+const readline = require('readline');
 
 const COLOR_RESET = '\x1b[0m';
 const COLOR_RED = '\x1b[31m';
@@ -35,20 +36,28 @@ const defaultMinimumRevision = 305043;
 
 const help = `
 Usage:
-  npx bisect-chrome [--good <revision>] [--bad <revision>] [<script>]
+  npx bisect-chrome [--manual] [--good <revision>] [--bad <revision>] [<script>]
 
 Parameters:
+  --manual  manually respond with "good" or "bad" instead of running script
   --good    revision that is known to be GOOD
   --bad     revision that is known to be BAD
   <script>  path to a node script or executable that returns a non-zero code for BAD and 0 for GOOD
 
 Example:
   npx bisect-chrome --good 577361 --bad 599821 simple.js
+  npx bisect-chrome --manual --good 577361 --bad 599821
 
 Note: the script exposes Chromium executable path as \`CRPATH\` environment variabble.
 
 Use https://omahaproxy.appspot.com/ to find revisions.
 `;
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+const promptAsync = (question) => new Promise(resolve => rl.question(question, resolve));
 
 (async function() {
   if (argv.h || argv.help) {
@@ -79,17 +88,18 @@ Use https://omahaproxy.appspot.com/ to find revisions.
   };
   const good = getRevisionArgument('good', defaultMinimumRevision);
   const bad = getRevisionArgument('bad', maxRevision);
+  const isManual = !!argv['manual'];
 
   const scriptPath = argv._[0] ? path.resolve(argv._[0]) : path.join(__dirname, 'default.js');
-  if (!fs.existsSync(scriptPath)) {
+  if (!isManual && !fs.existsSync(scriptPath)) {
     console.log(COLOR_RED + 'ERROR: Expected to be given a path to a script to run' + COLOR_RESET);
     console.log(help);
     process.exit(1);
   }
-  await bisect(scriptPath, good, bad);
+  await bisect(scriptPath, good, bad, isManual);
 })()
 
-async function bisect(scriptPath, good, bad) {
+async function bisect(scriptPath, good, bad, isManual) {
   const span = Math.abs(good - bad);
   console.log(`Bisecting ${COLOR_YELLOW}${span}${COLOR_RESET} revisions in ${COLOR_YELLOW}~${span.toString(2).length}${COLOR_RESET} iterations`);
 
@@ -101,7 +111,21 @@ async function bisect(scriptPath, good, bad) {
     let info = browserFetcher.revisionInfo(revision);
     const shouldRemove = !info.local;
     info = await downloadRevision(revision);
-    const exitCode = await runScript(scriptPath, info);
+    let exitCode = undefined;
+    if (isManual) {
+      console.log(`CRPATH = ${info.executablePath}`);
+      while (exitCode === undefined) {
+        const answer = (await promptAsync('Was it good? (good/bad) ')).trim().toLowerCase();
+        if (answer === 'good')
+          exitCode = 0;
+        else if (answer === 'bad')
+          exitCode = 1;
+        else
+          console.log(`unknown response - "${answer}". Expected one of good/bad`);
+      }
+    } else {
+      exitCode = await runScript(scriptPath, info);
+    }
     if (shouldRemove)
       await browserFetcher.remove(revision);
     let outcome;
