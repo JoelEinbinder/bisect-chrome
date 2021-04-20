@@ -113,12 +113,12 @@ async function bisect(scriptPath, good, bad, isManual) {
     info = await downloadRevision(revision);
     let exitCode = undefined;
     if (isManual) {
-      console.log(`CRPATH = ${info.executablePath}`);
+      console.log(`CRPATH='${info.executablePath}'`);
       while (exitCode === undefined) {
-        const answer = (await promptAsync('Was it good? (good/bad) ')).trim().toLowerCase();
-        if (answer === 'good')
+        const answer = (await promptAsync('Was it good? (g)ood/(b)ad: ')).trim().toLowerCase();
+        if (answer === 'g' || answer === 'good')
           exitCode = 0;
-        else if (answer === 'bad')
+        else if (answer === 'b' || answer === 'bad')
           exitCode = 1;
         else
           console.log(`unknown response - "${answer}". Expected one of good/bad`);
