@@ -10,13 +10,17 @@ Parameters:
 - `--manual`  manually respond with "good" or "bad" instead of running script
 - `--good`    revision that is known to be GOOD. Defaults to the latest revision
 - `--bad`     revision that is known to be BAD. Defaults to 305043
+- `--shell`   a shell script to run instead of a script path
 - `<script>`  path to a Puppeteer script that returns a non-zero code for BAD and 0 for GOOD.
 
 Example:
 - `npx bisect-chrome --good 577361 --bad 599821 simple.js`
+- `npx bisect-chrome --good 577361 --bad 599821 --shell "npm run ctest"`
 - `npx bisect-chrome --manual --good 577361 --bad 599821`
 
 Use https://omahaproxy.appspot.com/ to find revisions.
+
+Note: the script exposes Chromium executable path as \`CRPATH\` environment variabble.
 
 If a script is specified, launching Puppeteer from within that script will use the current Chromium revision. Revisions older than 493957 won't work with modern Puppeteer.
 
