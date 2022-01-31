@@ -21,7 +21,7 @@ const pptr = require('puppeteer-core');
 const browserFetcher = pptr.createBrowserFetcher();
 const path = require('path');
 const fs = require('fs');
-const {spawn, fork} = require('child_process');
+const {spawn, fork, exec} = require('child_process');
 const readline = require('readline');
 
 const COLOR_RESET = '\x1b[0m';
@@ -36,16 +36,18 @@ const defaultMinimumRevision = 305043;
 
 const help = `
 Usage:
-  npx bisect-chrome [--manual] [--good <revision>] [--bad <revision>] [<script>]
+  npx bisect-chrome [--manual] [--good <revision>] [--bad <revision>] [--shell <shell script>] [<script>]
 
 Parameters:
   --manual  manually respond with "good" or "bad" instead of running script
   --good    revision that is known to be GOOD
   --bad     revision that is known to be BAD
+  --shell   a shell script to run instead of a script path
   <script>  path to a node script or executable that returns a non-zero code for BAD and 0 for GOOD
 
 Example:
   npx bisect-chrome --good 577361 --bad 599821 simple.js
+  npx bisect-chrome --good 577361 --bad 599821 --shell "npm run ctest"
   npx bisect-chrome --manual --good 577361 --bad 599821
 
 Note: the script exposes Chromium executable path as \`CRPATH\` environment variabble.
@@ -89,6 +91,7 @@ const promptAsync = (question) => new Promise(resolve => rl.question(question, r
   const good = getRevisionArgument('good', defaultMinimumRevision);
   const bad = getRevisionArgument('bad', maxRevision);
   const isManual = !!argv['manual'];
+  const shellCmd = argv['shell'];
 
   const scriptPath = argv._[0] ? path.resolve(argv._[0]) : path.join(__dirname, 'default.js');
   if (!isManual && !fs.existsSync(scriptPath)) {
@@ -96,10 +99,10 @@ const promptAsync = (question) => new Promise(resolve => rl.question(question, r
     console.log(help);
     process.exit(1);
   }
-  await bisect(scriptPath, good, bad, isManual);
+  await bisect(shellCmd, scriptPath, good, bad, isManual);
 })()
 
-async function bisect(scriptPath, good, bad, isManual) {
+async function bisect(shellCmd, scriptPath, good, bad, isManual) {
   const span = Math.abs(good - bad);
   console.log(`Bisecting ${COLOR_YELLOW}${span}${COLOR_RESET} revisions in ${COLOR_YELLOW}~${span.toString(2).length}${COLOR_RESET} iterations`);
 
@@ -124,7 +127,12 @@ async function bisect(scriptPath, good, bad, isManual) {
           console.log(`unknown response - "${answer}". Expected one of good/bad`);
       }
     } else {
-      exitCode = await runScript(scriptPath, info);
+      const env = {
+        ...process.env,
+        CRPATH: info.executablePath,
+        PUPPETEER_EXECUTABLE_PATH: info.executablePath,
+      },
+      exitCode = await runScript(shellCmd, scriptPath, env);
     }
     if (shouldRemove)
       await browserFetcher.remove(revision);
@@ -156,18 +164,22 @@ async function bisect(scriptPath, good, bad, isManual) {
   console.log(`RANGE: https://chromium.googlesource.com/chromium/src/+log/${fromSha}..${toSha}`);
 }
 
-function runScript(scriptPath, revisionInfo) {
+function runScript(shellCmd, scriptPath, env) {
   const log = debug('bisect:runscript');
   log('Running script');
-  const spawner = scriptPath.endsWith('.js') ? fork : spawn;
-  const child = spawner(scriptPath, [], {
-    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-    env: {
-      ...process.env,
-      CRPATH: revisionInfo.executablePath,
-      PUPPETEER_EXECUTABLE_PATH: revisionInfo.executablePath,
-    },
-  });
+  let child;
+  if (shellCmd) {
+    child = exec(shellCmd, {
+      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      env,
+    });
+  } else {
+    const spawner = scriptPath.endsWith('.js') ? fork : spawn;
+    child = spawner(scriptPath, [], {
+      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      env,
+    });
+  }
   return new Promise((resolve, reject) => {
     child.on('error', err => reject(err));
     child.on('exit', code => resolve(code));
