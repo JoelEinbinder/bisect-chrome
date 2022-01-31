@@ -20,7 +20,7 @@ Example:
 
 Use https://omahaproxy.appspot.com/ to find revisions.
 
-Note: the script exposes Chromium executable path as \`CRPATH\` environment variabble.
+Note: The Chromium executable path is exposed to the script as the \`CRPATH\` environment variable.
 
 If a script is specified, launching Puppeteer from within that script will use the current Chromium revision. Revisions older than 493957 won't work with modern Puppeteer.
 
