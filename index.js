@@ -131,7 +131,7 @@ async function bisect(shellCmd, scriptPath, good, bad, isManual) {
         ...process.env,
         CRPATH: info.executablePath,
         PUPPETEER_EXECUTABLE_PATH: info.executablePath,
-      },
+      };
       exitCode = await runScript(shellCmd, scriptPath, env);
     }
     if (shouldRemove)
