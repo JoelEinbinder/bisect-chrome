@@ -169,8 +169,9 @@ function runScript(shellCmd, scriptPath, env) {
   log('Running script');
   let child;
   if (shellCmd) {
-    child = exec(shellCmd, {
+    child = spawn(shellCmd, {
       stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      shell: true,
       env,
     });
   } else {
