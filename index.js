@@ -14,15 +14,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// @ts-check
 
-const URL = require('url');
 const debug = require('debug');
 const pptr = require('puppeteer-core');
-const browserFetcher = pptr.createBrowserFetcher();
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
-const {spawn, fork, exec} = require('child_process');
+const {spawn, fork} = require('child_process');
 const readline = require('readline');
+const rimraf = require('rimraf');
+
+const downloadDir = path.join(os.tmpdir(), 'bisect-chrome');
+const browserFetcher = new pptr.BrowserFetcher({
+  path: downloadDir,
+  useMacOSARMBinary: true,
+});
 
 const COLOR_RESET = '\x1b[0m';
 const COLOR_RED = '\x1b[31m';
@@ -61,7 +68,7 @@ const rl = readline.createInterface({
 });
 const promptAsync = (question) => new Promise(resolve => rl.question(question, resolve));
 
-(async function() {
+(async () => {
   if (argv.h || argv.help) {
     console.log(help);
     process.exit(0);
@@ -111,9 +118,12 @@ async function bisect(shellCmd, scriptPath, good, bad, isManual) {
     const revision = await findDownloadableRevision(middle, good, bad);
     if (!revision || revision === good || revision === bad)
       break;
-    let info = browserFetcher.revisionInfo(revision);
-    const shouldRemove = !info.local;
-    info = await downloadRevision(revision);
+    const shouldRemove = !browserFetcher.revisionInfo(revision).local;
+    const info = await downloadRevision(revision);
+    if (!info) {
+      console.log(COLOR_RED + 'ERROR: Failed to download revision' + COLOR_RESET);
+      process.exit(1);
+    }
     let exitCode = undefined;
     if (isManual) {
       console.log(`CRPATH='${info.executablePath}'`);
@@ -170,16 +180,15 @@ function runScript(shellCmd, scriptPath, env) {
   let child;
   if (shellCmd) {
     child = spawn(shellCmd, {
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      stdio: 'inherit',
       shell: true,
       env,
     });
   } else {
-    const spawner = scriptPath.endsWith('.js') ? fork : spawn;
-    child = spawner(scriptPath, [], {
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-      env,
-    });
+    if (scriptPath.endsWith('.js'))
+      child = fork(scriptPath, [], { stdio: 'inherit', env })
+    else
+      child = spawn(scriptPath, [], { stdio: 'inherit', env })
   }
   return new Promise((resolve, reject) => {
     child.on('error', err => reject(err));
@@ -250,15 +259,18 @@ async function lastRevision() {
   return revision;
 }
 
+/**
+ * @param {string} url
+ * @return {!Promise<!Object>}
+ */
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
     const agent = url.startsWith('https://') ? require('https') : require('http');
-    const options = URL.parse(url);
-    options.method = 'GET';
-    options.headers = {
-      'Content-Type': 'application/json'
-    };
-    const req = agent.request(options, function(res) {
+    const req = agent.request(url, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }, (res) => {
       let result = '';
       res.setEncoding('utf8');
       res.on('data', chunk => result += chunk);

@@ -21,7 +21,6 @@ const fs = require('fs');
 const {promisify} = require('util');
 
 const mkdtempAsync = promisify(fs.mkdtemp);
-const removeFolderAsync = promisify(removeFolder);
 
 const CHROME_PROFILE_PATH = path.join(os.tmpdir(), 'chrome_bisect_dev_profile-');
 
@@ -101,7 +100,7 @@ class Launcher {
         chromeClosed = true;
         // Cleanup as processes exit.
         if (temporaryUserDataDir) {
-          removeFolderAsync(temporaryUserDataDir)
+          removeFolder(temporaryUserDataDir)
               .then(() => fulfill())
               .catch(err => console.error(err));
         } else {
